@@ -27,16 +27,16 @@ function App () {
 	const setNewCurrentlyStreaming = useMetadataStore((state) => state.setCurrentlyStreaming);
 	const setFirstState = useMetadataStore((state) => state.setFirstState);
 	const updateStreamPosition = useMetadataStore((state) => state.updateStreamPosition);
-	const setStreamPositions = useMetadataStore((state) => state.setStreamPositions);
-	const streamPositions = useMetadataStore((state) => state.streamPositions);
 
 	const [seekPositions, setSeekPositions] = useState({});
 
 	useEffect(() => {
 		OBR.onReady(async () => {
+			let currentPlayerRole = playerRole;
 			if (playerRole === "") {
 				const newPlayerRole = await OBR.player.getRole();
 				setPlayerRole(newPlayerRole);
+				currentPlayerRole = newPlayerRole;
 				if (newPlayerRole === "PLAYER") {
 					OBR.action.setWidth(205);
 					OBR.action.setHeight(106);
@@ -64,7 +64,7 @@ function App () {
 					newStreamPositions = values[getPluginId("streamPositions")];
 					
 					// For players, sync to GM's position when joining
-					if (newPlayerRole === "PLAYER") {
+					if (currentPlayerRole === "PLAYER") {
 						const now = Date.now();
 						const newSeekPositions = {};
 						Object.keys(newStreamPositions).forEach(streamLinkId => {

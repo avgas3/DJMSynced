@@ -6,7 +6,7 @@ export function Player({streamLinkId, url, playing, loop, volume, muted, onEnded
 
 	useEffect(() => {
 		if (playerRef.current && seekToPosition !== null && seekToPosition !== undefined) {
-			playerRef.current.seekTo(seekToPosition, 'seconds');
+			playerRef.current.seekTo(seekToPosition, "seconds");
 		}
 	}, [seekToPosition]);
 
