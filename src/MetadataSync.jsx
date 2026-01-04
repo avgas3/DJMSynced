@@ -7,6 +7,7 @@ export function MetadataSync() {
 	const prevPaused = useRef("playing");
 	const prevSoundOutput = useRef("global");
 	const prevCurrentlyStreaming = useRef([]);
+	const prevStreamPositions = useRef({});
 	useEffect(
 		() =>
 			useMetadataStore.subscribe((state) => {
@@ -20,6 +21,26 @@ export function MetadataSync() {
 				if (prevPaused.current !== state.paused) {
 					prevPaused.current = state.paused;
 					pausedChanged = true;
+				}
+
+				let positionsChanged = false;
+				const prevPositionKeys = Object.keys(prevStreamPositions.current);
+				const currentPositionKeys = Object.keys(state.streamPositions);
+				
+				if (prevPositionKeys.length !== currentPositionKeys.length) {
+					positionsChanged = true;
+				} else {
+					for (const key of currentPositionKeys) {
+						if (!prevStreamPositions.current[key] || 
+							prevStreamPositions.current[key].playedSeconds !== state.streamPositions[key].playedSeconds) {
+							positionsChanged = true;
+							break;
+						}
+					}
+				}
+
+				if (positionsChanged) {
+					prevStreamPositions.current = state.streamPositions;
 				}
 
 				let streamingChanged = false;
@@ -111,12 +132,13 @@ export function MetadataSync() {
 					prevCurrentlyStreaming.current = state.currentlyStreaming;
 				}
 
-				if(streamingChanged || pausedChanged || soundOutputChanged) {
+				if(streamingChanged || pausedChanged || soundOutputChanged || positionsChanged) {
 					try {
 						OBR.room.setMetadata({
 							[getPluginId("paused")]: state.paused,
 							[getPluginId("soundOutput")]: state.soundOutput,
 							[getPluginId("currently")]: state.currentlyStreaming,
+							[getPluginId("streamPositions")]: state.streamPositions,
 						});
 					}
 					catch(err) {

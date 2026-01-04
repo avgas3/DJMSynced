@@ -26,6 +26,11 @@ function App () {
 	const toggleSoundOutput = useMetadataStore((state) => state.toggleSoundOutput);
 	const setNewCurrentlyStreaming = useMetadataStore((state) => state.setCurrentlyStreaming);
 	const setFirstState = useMetadataStore((state) => state.setFirstState);
+	const updateStreamPosition = useMetadataStore((state) => state.updateStreamPosition);
+	const setStreamPositions = useMetadataStore((state) => state.setStreamPositions);
+	const streamPositions = useMetadataStore((state) => state.streamPositions);
+
+	const [seekPositions, setSeekPositions] = useState({});
 
 	useEffect(() => {
 		OBR.onReady(async () => {
@@ -42,6 +47,7 @@ function App () {
 				let currently = [];
 				let newPaused = "playing";
 				let newSoundOutput = "global";
+				let newStreamPositions = {};
 				if (values[getPluginId("currently")]) {
 					currently = values[getPluginId("currently")];
 					setCurrentlyStreaming(currently);
@@ -54,7 +60,24 @@ function App () {
 					newSoundOutput = values[getPluginId("soundOutput")];
 					setSoundOutput(newSoundOutput);
 				}
-				setFirstState(currently, newPaused, newSoundOutput);
+				if (values[getPluginId("streamPositions")]) {
+					newStreamPositions = values[getPluginId("streamPositions")];
+					
+					// For players, sync to GM's position when joining
+					if (newPlayerRole === "PLAYER") {
+						const now = Date.now();
+						const newSeekPositions = {};
+						Object.keys(newStreamPositions).forEach(streamLinkId => {
+							const posData = newStreamPositions[streamLinkId];
+							// Calculate position based on time elapsed since GM's last update
+							const timeSinceUpdate = (now - posData.syncTimestamp) / 1000;
+							const adjustedPosition = posData.playedSeconds + (newPaused === "playing" ? timeSinceUpdate : 0);
+							newSeekPositions[streamLinkId] = adjustedPosition;
+						});
+						setSeekPositions(newSeekPositions);
+					}
+				}
+				setFirstState(currently, newPaused, newSoundOutput, newStreamPositions);
 			});
 			OBR.room.onMetadataChange((metadata) => {
 				if (metadata[getPluginId("paused")]) {
@@ -70,6 +93,26 @@ function App () {
 				if (metadata[getPluginId("currently")]) {
 					const currentlyArray = metadata[getPluginId("currently")];
 					setCurrentlyStreaming(currentlyArray);
+				}
+
+				if (metadata[getPluginId("streamPositions")] && playerRole === "PLAYER") {
+					const newStreamPositions = metadata[getPluginId("streamPositions")];
+					const now = Date.now();
+					const newSeekPositions = {};
+					
+					Object.keys(newStreamPositions).forEach(streamLinkId => {
+						const posData = newStreamPositions[streamLinkId];
+						// Only sync if position data is recent (within 5 seconds)
+						const timeSinceUpdate = (now - posData.syncTimestamp) / 1000;
+						if (timeSinceUpdate < 5) {
+							const adjustedPosition = posData.playedSeconds + timeSinceUpdate;
+							newSeekPositions[streamLinkId] = adjustedPosition;
+						}
+					});
+					
+					if (Object.keys(newSeekPositions).length > 0) {
+						setSeekPositions(newSeekPositions);
+					}
 				}
 			});
 		});
@@ -352,6 +395,14 @@ function App () {
   
 		return true;
 	}
+
+	function handleProgress(streamLinkId, progress) {
+		// Only GM tracks positions
+		if (playerRole === "GM") {
+			updateStreamPosition(streamLinkId, progress.playedSeconds);
+		}
+	}
+
 	function renderVideos() {
 		return currentlyStreaming.map(stream => {
 			if (!isEmpty(stream)) {
@@ -362,6 +413,20 @@ function App () {
 							streamFadeVol = streamFadeVolumes[stream.id];
 						}
 						const volume = masterVolume.volume / 100 * stream.streamVolume / 100 * streamLink.volume / 100 * streamFadeVol / 100;
+						
+						// Get seek position if available and clear it after use
+						const seekPos = seekPositions[streamLink.id];
+						if (seekPos !== undefined) {
+							// Clear this seek position so it only applies once
+							setTimeout(() => {
+								setSeekPositions(prev => {
+									const newPos = {...prev};
+									delete newPos[streamLink.id];
+									return newPos;
+								});
+							}, 100);
+						}
+
 						return <MemoizedPlayer
 							key={streamLink.id}
 							streamLinkId={streamLink.id}
@@ -371,6 +436,8 @@ function App () {
 							volume={volume}
 							muted={stream.streamMute || streamLink.mute || masterVolume.mute}
 							onEnded={(event) => endFunction(event, streamLink)}
+							onProgress={(progress) => handleProgress(streamLink.id, progress)}
+							seekToPosition={seekPos}
 						/>;
 					}
 					return "";
